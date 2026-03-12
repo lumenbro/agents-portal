@@ -53,7 +53,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
       }
 
       const deployData = await deployRes.json();
-      const walletAddress = deployData.data?.contractAddress || deployData.contractAddress;
+      const walletAddress = deployData.data?.walletAddress || deployData.data?.contractId || deployData.walletAddress;
 
       setStatus('Deriving ghost account...');
       // Derive ghost keypair from passkey + server salt
@@ -104,6 +104,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ghostAddress,
+          walletAddress,
           challenge: challenge2,
           signature: ghostSig2,
           passkeyPublicKeyBase64: publicKey,

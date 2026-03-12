@@ -6,7 +6,7 @@ import { deriveGhostKeypairServerSide } from '@/lib/ghost-address-derivation';
 
 export async function POST(request: NextRequest) {
   try {
-    const { ghostAddress, challenge, signature, passkeyPublicKeyBase64 } = await request.json();
+    const { ghostAddress, walletAddress: clientWalletAddress, challenge, signature, passkeyPublicKeyBase64 } = await request.json();
 
     if (!ghostAddress || !challenge || !signature) {
       return createErrorResponse(ERROR_CODES.MISSING_PARAMS, 'Missing ghostAddress, challenge, or signature', 400);
@@ -21,16 +21,8 @@ export async function POST(request: NextRequest) {
       return createErrorResponse(ERROR_CODES.UNAUTHORIZED, 'Invalid signature', 401);
     }
 
-    // Derive wallet address from passkey if provided
-    let walletAddress = ghostAddress; // fallback
-    if (passkeyPublicKeyBase64) {
-      try {
-        const derivedGhost = await deriveGhostKeypairServerSide(passkeyPublicKeyBase64);
-        if (derivedGhost.publicKey() === ghostAddress) {
-          walletAddress = ghostAddress; // confirmed match
-        }
-      } catch {}
-    }
+    // Use the smart wallet C-address if provided, otherwise fall back to ghost
+    const walletAddress = clientWalletAddress || ghostAddress;
 
     const token = createSessionToken(walletAddress, ghostAddress);
     return createSuccessResponse({ token, expiresIn: 86400 });
