@@ -15,8 +15,22 @@ export function getRpId(): string {
   return getWebAuthnRpId();
 }
 
+// secp256r1 curve order N
+const SECP256R1_N = BigInt('0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551');
+const SECP256R1_HALF_N = SECP256R1_N / 2n;
+
+function bufferToBigInt(buf: Buffer): bigint {
+  return BigInt('0x' + buf.toString('hex'));
+}
+
+function bigIntToBuffer32(n: bigint): Buffer {
+  const hex = n.toString(16).padStart(64, '0');
+  return Buffer.from(hex, 'hex');
+}
+
 /**
- * Convert ECDSA ASN.1 DER signature to compact 64-byte format
+ * Convert ECDSA ASN.1 DER signature to compact 64-byte format with low-S normalization.
+ * Soroban's verify_sig_ecdsa_secp256r1 requires low-S (BIP-62 / RFC 6979).
  */
 export function convertEcdsaSignatureAsnToCompact(derSignature: Buffer): Buffer {
   // ASN.1 DER format: 0x30 [total-length] 0x02 [r-length] [r] 0x02 [s-length] [s]
@@ -51,14 +65,20 @@ export function convertEcdsaSignatureAsnToCompact(derSignature: Buffer): Buffer 
   if (r.length === 33 && r[0] === 0x00) r = r.subarray(1);
   if (s.length === 33 && s[0] === 0x00) s = s.subarray(1);
 
-  // Pad to 32 bytes if needed
+  // Pad to 32 bytes
   const rPadded = Buffer.alloc(32);
   r.copy(rPadded, 32 - r.length);
 
   const sPadded = Buffer.alloc(32);
   s.copy(sPadded, 32 - s.length);
 
-  return Buffer.concat([rPadded, sPadded]);
+  // Normalize S to low form (required by Soroban verify_sig_ecdsa_secp256r1)
+  const sBigInt = bufferToBigInt(sPadded);
+  const sNormalized = sBigInt > SECP256R1_HALF_N
+    ? bigIntToBuffer32(SECP256R1_N - sBigInt)
+    : sPadded;
+
+  return Buffer.concat([rPadded, sNormalized]);
 }
 
 /**
