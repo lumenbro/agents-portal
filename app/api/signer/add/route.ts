@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       assembledTxXdr,
+      rawTxXdr: innerTx.toXDR(),
       authEntryXdr: authEntry.toXDR('base64'),
       latestLedger: latestLedger.toString(),
       networkPassphrase,

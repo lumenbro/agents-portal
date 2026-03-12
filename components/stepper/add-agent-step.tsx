@@ -88,7 +88,7 @@ export function AddAgentStep({ walletAddress, ghostAddress, sessionToken, onComp
 
       const signerJson = await addSignerRes.json();
       const signerResult = signerJson.data || signerJson;
-      const { assembledTxXdr, authEntryXdr, latestLedger, networkPassphrase } = signerResult;
+      const { assembledTxXdr, rawTxXdr, authEntryXdr, latestLedger, networkPassphrase } = signerResult;
 
       // 3. Sign auth entry with passkey (secp256r1 biometric prompt)
       setStatus('Approve with passkey (biometric prompt)...');
@@ -109,11 +109,10 @@ export function AddAgentStep({ walletAddress, ghostAddress, sessionToken, onComp
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          rawTxXdr,
           assembledTxXdr,
           signedAuthEntryXdr,
           networkPassphrase,
-          passkeyCredentialId: credentialId,
-          walletAddress,
         }),
       });
 
