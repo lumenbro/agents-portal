@@ -2,7 +2,12 @@
  * Agent CRUD - List & Create
  *
  * GET  /api/agents - List agents for authenticated wallet
- * POST /api/agents - Create new agent (generate Ed25519 keypair)
+ * POST /api/agents - Create new agent
+ *
+ * Supports two signer types:
+ *   Ed25519   — Server generates keypair, encrypts secret (reveal-once)
+ *   Secp256r1 — Operator provides public key from Secure Enclave / TPM
+ *               (private key never leaves hardware, no secret to store)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -10,6 +15,7 @@ import { Keypair } from '@stellar/stellar-sdk';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { verifySessionToken } from '@/lib/api-session-token';
 import { getDefaultAgentPolicyAddress, isMainnet } from '@/lib/network-config';
+import { computeKeyId } from '@/lib/keypo-signer';
 import crypto from 'crypto';
 
 export const runtime = 'nodejs';
@@ -55,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     const { data: agents } = await supabase
       .from('agents')
-      .select('id, name, signer_public_key, policy_tier_id, policy_address, status, created_at, revoked_at')
+      .select('id, name, signer_public_key, signer_type, key_id, key_label, policy_tier_id, policy_address, status, created_at, revoked_at')
       .eq('wallet_id', wallet.id)
       .order('created_at', { ascending: false });
 
@@ -80,10 +86,20 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, policyTier = '$50/day' } = body;
+    const {
+      name,
+      policyTier = '$50/day',
+      signerType = 'Ed25519',     // 'Ed25519' | 'Secp256r1'
+      publicKeyBase64,            // Required for Secp256r1 (65 bytes, base64)
+      keyLabel,                   // Optional: keypo-signer label (for Go Live snippets)
+    } = body;
 
     if (!name || typeof name !== 'string' || name.length > 64) {
       return NextResponse.json({ error: 'Invalid agent name' }, { status: 400 });
+    }
+
+    if (signerType !== 'Ed25519' && signerType !== 'Secp256r1') {
+      return NextResponse.json({ error: 'signerType must be Ed25519 or Secp256r1' }, { status: 400 });
     }
 
     const supabase = getSupabaseAdmin();
@@ -99,30 +115,79 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Wallet not found' }, { status: 404 });
     }
 
-    // Generate Ed25519 keypair for agent
-    const agentKeypair = Keypair.random();
-    const publicKey = agentKeypair.publicKey();
-    const secretKey = agentKeypair.secret();
-
-    // Encrypt secret key
-    const encryptedSecret = encryptSecret(secretKey);
-
     // Get policy address
     const policyAddress = getDefaultAgentPolicyAddress();
 
-    // Store agent
+    if (signerType === 'Secp256r1') {
+      // ── Secure Enclave / TPM path ──
+      // Operator provides public key generated on their machine via keypo-signer.
+      // Private key never leaves hardware — no secret to store or reveal.
+      if (!publicKeyBase64) {
+        return NextResponse.json(
+          { error: 'publicKeyBase64 required for Secp256r1 signer' },
+          { status: 400 },
+        );
+      }
+
+      const publicKeyBytes = Buffer.from(publicKeyBase64, 'base64');
+      if (publicKeyBytes.length !== 65 || publicKeyBytes[0] !== 0x04) {
+        return NextResponse.json(
+          { error: 'Invalid P-256 public key (expected 65 uncompressed bytes with 0x04 prefix)' },
+          { status: 400 },
+        );
+      }
+
+      // Compute deterministic key_id = SHA256(publicKey) — used by __check_auth
+      const keyId = computeKeyId(publicKeyBytes).toString('base64');
+
+      const { data: agent, error: insertError } = await supabase
+        .from('agents')
+        .insert({
+          wallet_id: wallet.id,
+          name,
+          signer_public_key: publicKeyBase64,    // base64 of 65-byte P-256 key
+          signer_type: 'Secp256r1',
+          key_id: keyId,                          // SHA256(publicKey), base64
+          key_label: keyLabel || null,            // keypo-signer label (optional)
+          // No encrypted_secret_key — key is hardware-bound
+          policy_tier_id: policyTier,
+          policy_address: policyAddress,
+          status: 'pending_signer',
+        })
+        .select('id, name, signer_public_key, signer_type, key_id, key_label, policy_tier_id, policy_address, status, created_at')
+        .single();
+
+      if (insertError) {
+        console.error('[Agents] SE insert error:', insertError);
+        return NextResponse.json({ error: 'Failed to create agent' }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        agent,
+        signerType: 'Secp256r1',
+        message: 'Agent created with Secure Enclave key. Private key is hardware-bound.',
+      });
+    }
+
+    // ── Ed25519 path (default) ──
+    const agentKeypair = Keypair.random();
+    const publicKey = agentKeypair.publicKey();
+    const secretKey = agentKeypair.secret();
+    const encryptedSecret = encryptSecret(secretKey);
+
     const { data: agent, error: insertError } = await supabase
       .from('agents')
       .insert({
         wallet_id: wallet.id,
         name,
         signer_public_key: publicKey,
+        signer_type: 'Ed25519',
         encrypted_secret_key: encryptedSecret,
         policy_tier_id: policyTier,
         policy_address: policyAddress,
-        status: 'pending_signer', // Signer not yet added on-chain
+        status: 'pending_signer',
       })
-      .select('id, name, signer_public_key, policy_tier_id, policy_address, status, created_at')
+      .select('id, name, signer_public_key, signer_type, policy_tier_id, policy_address, status, created_at')
       .single();
 
     if (insertError) {
@@ -132,8 +197,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       agent,
-      // Return secret key ONCE (reveal-once pattern)
       secretKey,
+      signerType: 'Ed25519',
       message: 'Save this secret key now. It will not be shown again.',
     });
   } catch (error: any) {

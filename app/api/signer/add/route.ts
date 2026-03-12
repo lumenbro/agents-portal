@@ -9,19 +9,22 @@ export const runtime = 'nodejs';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { walletAddress, signerPublicKey, role, policyAddress, sourceAddress, skipPolicy = false } = body;
+    const {
+      walletAddress,
+      signerPublicKey,
+      signerType = 'Ed25519',  // 'Ed25519' | 'Secp256r1'
+      keyId,                    // base64 key_id for Secp256r1 (SHA256 of public key)
+      role,
+      policyAddress,
+      sourceAddress,
+      skipPolicy = false,
+    } = body;
 
     const rpcUrl = getServerRpcUrl();
     const networkPassphrase = getNetworkPassphrase();
     const server = new SorobanRpcServer(rpcUrl);
 
-    const publicKeyBytes = StrKey.decodeEd25519PublicKey(signerPublicKey);
-    const publicKeyBuffer = Buffer.from(publicKeyBytes);
-
-    const ed25519SignerStruct = xdr.ScVal.scvMap([
-      new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('public_key'), val: xdr.ScVal.scvBytes(publicKeyBuffer) }),
-    ]);
-
+    // Build policy
     const buildExternalValidatorPolicy = (address: string): xdr.ScVal => {
       const policyAddr = Address.fromString(address);
       const policyStruct = xdr.ScVal.scvMap([
@@ -43,7 +46,41 @@ export async function POST(request: NextRequest) {
       signerRole = xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('Standard'), xdr.ScVal.scvVec(policyScVals)]);
     }
 
-    const signerArg = xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('Ed25519'), ed25519SignerStruct, signerRole]);
+    // Build signer arg based on type
+    let signerArg: xdr.ScVal;
+
+    if (signerType === 'Secp256r1') {
+      // Secp256r1 signer struct: { key_id: Bytes, public_key: BytesN<65> }
+      const publicKeyBytes = Buffer.from(signerPublicKey, 'base64');
+      if (publicKeyBytes.length !== 65 || publicKeyBytes[0] !== 0x04) {
+        return NextResponse.json(
+          { error: 'Invalid P-256 public key (expected 65 uncompressed bytes with 0x04 prefix)' },
+          { status: 400 },
+        );
+      }
+
+      // key_id: provided or computed as SHA256(publicKey)
+      const keyIdBytes = keyId
+        ? Buffer.from(keyId, 'base64')
+        : require('crypto').createHash('sha256').update(publicKeyBytes).digest();
+
+      const secp256r1SignerStruct = xdr.ScVal.scvMap([
+        new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('key_id'), val: xdr.ScVal.scvBytes(keyIdBytes) }),
+        new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('public_key'), val: xdr.ScVal.scvBytes(publicKeyBytes) }),
+      ]);
+
+      signerArg = xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('Secp256r1'), secp256r1SignerStruct, signerRole]);
+    } else {
+      // Ed25519 signer struct: { public_key: BytesN<32> }
+      const publicKeyBytes = StrKey.decodeEd25519PublicKey(signerPublicKey);
+      const publicKeyBuffer = Buffer.from(publicKeyBytes);
+
+      const ed25519SignerStruct = xdr.ScVal.scvMap([
+        new xdr.ScMapEntry({ key: xdr.ScVal.scvSymbol('public_key'), val: xdr.ScVal.scvBytes(publicKeyBuffer) }),
+      ]);
+
+      signerArg = xdr.ScVal.scvVec([xdr.ScVal.scvSymbol('Ed25519'), ed25519SignerStruct, signerRole]);
+    }
 
     if (!sourceAddress || !StrKey.isValidEd25519PublicKey(sourceAddress)) {
       return NextResponse.json({ error: 'Missing or invalid sourceAddress' }, { status: 400 });

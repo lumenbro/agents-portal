@@ -28,7 +28,10 @@ CREATE TABLE IF NOT EXISTS agents (
   wallet_id UUID NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   signer_public_key TEXT NOT NULL,
-  encrypted_secret_key TEXT NOT NULL,
+  signer_type TEXT NOT NULL DEFAULT 'Ed25519',  -- 'Ed25519' | 'Secp256r1'
+  encrypted_secret_key TEXT,                     -- NULL for Secp256r1 (hardware-bound)
+  key_id TEXT,                                   -- SHA256(publicKey) for Secp256r1 __check_auth
+  key_label TEXT,                                -- keypo-signer label (e.g., 'agent-compute-bot-1')
   secret_revealed BOOLEAN NOT NULL DEFAULT false,
   policy_tier_id TEXT,
   policy_address TEXT,
