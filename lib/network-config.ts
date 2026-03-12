@@ -67,7 +67,7 @@ const MAINNET_CONFIG: NetworkConfig = {
   horizonUrl: process.env.NEXT_PUBLIC_HORIZON_MAINNET || 'https://horizon.stellar.org',
   friendbotUrl: undefined,
   smartAccountFactoryAddress: process.env.NEXT_PUBLIC_SMART_ACCOUNT_FACTORY_MAINNET ||
-    'CBBNVETMMVVY4EQI67HR7Y4YLQCUJMYJYUXLD3UYC4PCPXO2XNWAWL6X',
+    'CBBCRKNVBY4J5LT4OTRBAGVV5AVN5O3FQQV6KOQCYZMM5UJ3ROJ22ZNH',
   smartAccountWasmHash: process.env.SMART_ACCOUNT_WASM_HASH ||
     '8cced6471a6f5db317d9d1e94cc8ddc43e2d6324b118c70c1555c7d990ae5499',
   soroswapRouterAddress: process.env.NEXT_PUBLIC_SOROSWAP_ROUTER_MAINNET ||
