@@ -4,7 +4,7 @@ import { getDeployerKeypair } from '@/lib/get-deployer-keypair';
 import { xdr, Address } from '@stellar/stellar-sdk';
 import { createErrorResponse, createSuccessResponse, ERROR_CODES } from '@/lib/api-error';
 import { validateRequest, walletDeploySchema } from '@/lib/api-validation';
-import { getServerRpcUrl, getNetworkPassphrase, isMainnet } from '@/lib/network-config';
+import { getServerRpcUrl, getNetworkPassphrase, getNetworkConfig, isMainnet } from '@/lib/network-config';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 function base64UrlToBase64(base64url: string): string {
@@ -25,9 +25,9 @@ async function getDeploymentService(): Promise<WalletDeploymentService> {
     deploymentService = new WalletDeploymentService({
       sorobanRpcUrl: getServerRpcUrl(),
       networkPassphrase: getNetworkPassphrase(),
-      factoryAddress: process.env.SMART_ACCOUNT_FACTORY_ADDRESS!,
+      factoryAddress: process.env.SMART_ACCOUNT_FACTORY_ADDRESS || getNetworkConfig().smartAccountFactoryAddress,
       deployerKeypair,
-      wasmHash: process.env.SMART_ACCOUNT_WASM_HASH || '8cced6471a6f5db317d9d1e94cc8ddc43e2d6324b118c70c1555c7d990ae5499',
+      wasmHash: process.env.SMART_ACCOUNT_WASM_HASH || getNetworkConfig().smartAccountWasmHash,
     });
   }
   return deploymentService;
