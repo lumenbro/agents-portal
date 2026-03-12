@@ -2,82 +2,62 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { getExplorerNetwork } from '@/lib/network-config';
 
 interface FundWalletStepProps {
-  ghostAddress: string;
   walletAddress: string;
   sessionToken: string;
   onComplete: () => void;
 }
 
-export function FundWalletStep({ ghostAddress, walletAddress, sessionToken, onComplete }: FundWalletStepProps) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+export function FundWalletStep({ walletAddress, sessionToken, onComplete }: FundWalletStepProps) {
+  const [copied, setCopied] = useState(false);
+  const explorerNet = getExplorerNetwork();
 
-  const handleCoinbaseOnramp = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/coinbase/session-token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${sessionToken}`,
-        },
-        body: JSON.stringify({ address: ghostAddress }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || 'Failed to start Coinbase Onramp');
-      }
-
-      const data = await res.json();
-      window.open(data.url, '_blank');
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(walletAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
     <div className="space-y-6">
-      <div className="space-y-4">
-        <div>
-          <h3 className="text-sm font-medium text-gray-300 mb-2">Option 1: Buy with Coinbase</h3>
-          <Button
-            onClick={handleCoinbaseOnramp}
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700"
+      <div className="bg-gray-800 rounded-lg p-5">
+        <p className="text-sm text-gray-300 mb-3">
+          Send USDC (Stellar) to your smart wallet:
+        </p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 text-sm text-green-400 break-all select-all bg-gray-900 rounded px-3 py-2">
+            {walletAddress}
+          </code>
+          <button
+            onClick={handleCopy}
+            className="shrink-0 px-3 py-2 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
           >
-            {loading ? 'Opening Coinbase...' : 'Buy USDC with Coinbase'}
-          </Button>
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
         </div>
-
-        <div className="relative">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-700" />
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-gray-900 px-2 text-gray-500">OR</span>
-          </div>
-        </div>
-
-        <div>
-          <h3 className="text-sm font-medium text-gray-300 mb-2">Option 2: Direct Deposit</h3>
-          <div className="bg-gray-800 rounded-lg p-4">
-            <p className="text-xs text-gray-400 mb-2">Send XLM or USDC to your relay address:</p>
-            <code className="text-sm text-green-400 break-all select-all">{ghostAddress}</code>
-          </div>
-        </div>
+        <a
+          href={`https://stellar.expert/explorer/${explorerNet}/contract/${walletAddress}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-blue-400 hover:underline mt-2 inline-block"
+        >
+          View on Stellar Expert
+        </a>
       </div>
 
-      {error && (
-        <div className="bg-red-900/30 border border-red-800 rounded-lg p-3 text-sm text-red-400">
-          {error}
-        </div>
-      )}
+      <div className="bg-gray-800/50 rounded-lg p-4 text-sm text-gray-400 space-y-2">
+        <p>Your smart wallet accepts:</p>
+        <ul className="list-disc list-inside space-y-1 text-gray-500">
+          <li>USDC (Stellar) — used for x402 compute payments</li>
+          <li>LumenJoule (LJOULE) — 12% discount vs USDC</li>
+          <li>XLM — for gas (agent direct transfers only)</li>
+        </ul>
+        <p className="text-xs text-gray-600 mt-2">
+          Coinbase on-ramp coming soon. For now, send from any Stellar wallet or exchange.
+        </p>
+      </div>
 
       <div className="flex gap-3">
         <Button
@@ -91,7 +71,7 @@ export function FundWalletStep({ ghostAddress, walletAddress, sessionToken, onCo
           onClick={onComplete}
           className="flex-1 bg-green-600 hover:bg-green-700"
         >
-          I&apos;ve funded my wallet
+          I've funded my wallet
         </Button>
       </div>
     </div>

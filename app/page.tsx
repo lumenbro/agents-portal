@@ -10,8 +10,8 @@ import { GoLiveStep } from '@/components/stepper/go-live-step';
 
 const STEPS = [
   { id: 1, title: 'Create Wallet', description: 'Register with Face ID. No seed phrases.' },
-  { id: 2, title: 'Fund Wallet', description: 'Add USDC via Coinbase or direct deposit.' },
-  { id: 3, title: 'Add Agent', description: 'Generate agent keys with spend policies.' },
+  { id: 2, title: 'Add Agent', description: 'Generate agent keys with spend policies.' },
+  { id: 3, title: 'Fund Wallet', description: 'Send USDC to your smart wallet.' },
   { id: 4, title: 'Go Live', description: 'Copy your SDK config and start building.' },
 ];
 
@@ -108,22 +108,21 @@ export default function HomePage() {
               />
             )}
             {currentStep === 2 && (
-              <FundWalletStep
-                ghostAddress={ghostAddress!}
-                walletAddress={walletAddress!}
-                sessionToken={sessionToken!}
-                onComplete={() => setCurrentStep(3)}
-              />
-            )}
-            {currentStep === 3 && (
               <AddAgentStep
                 walletAddress={walletAddress!}
                 ghostAddress={ghostAddress!}
                 sessionToken={sessionToken!}
                 onComplete={(data) => {
                   setAgentData(data);
-                  setCurrentStep(4);
+                  setCurrentStep(3);
                 }}
+              />
+            )}
+            {currentStep === 3 && (
+              <FundWalletStep
+                walletAddress={walletAddress!}
+                sessionToken={sessionToken!}
+                onComplete={() => setCurrentStep(4)}
               />
             )}
             {currentStep === 4 && (
