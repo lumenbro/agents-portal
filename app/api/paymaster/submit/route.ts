@@ -72,9 +72,11 @@ export async function POST(request: NextRequest) {
     // 6. Parse inner transaction
     const innerTx = new Transaction(innerXdr, networkPassphrase);
 
-    // 7. Fee-bump wrap
+    // 7. Fee-bump wrap (fee must be >= inner TX fee for Soroban resource fees)
+    const innerFee = parseInt(innerTx.fee, 10);
+    const bumpFee = Math.max(innerFee + parseInt(BASE_FEE, 10), innerFee * 2).toString();
     const feeBumpTx = TransactionBuilder.buildFeeBumpTransaction(
-      paymasterKp, (Number(BASE_FEE) * 100).toString(), innerTx, networkPassphrase
+      paymasterKp, bumpFee, innerTx, networkPassphrase
     );
     feeBumpTx.sign(paymasterKp);
 
