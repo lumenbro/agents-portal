@@ -22,6 +22,37 @@ export default function HomePage() {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [agentData, setAgentData] = useState<any>(null);
 
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('agents_session');
+      if (saved) {
+        const session = JSON.parse(saved);
+        if (session.walletAddress && session.sessionToken) {
+          setWalletAddress(session.walletAddress);
+          setGhostAddress(session.ghostAddress);
+          setSessionToken(session.sessionToken);
+          // If they already completed setup, go to step 4 (Go Live) or redirect to dashboard
+          if (session.completedSetup) {
+            window.location.href = '/dashboard';
+          }
+        }
+      }
+    } catch { /* ignore corrupt storage */ }
+  }, []);
+
+  // Persist session when wallet is created
+  useEffect(() => {
+    if (walletAddress && sessionToken) {
+      localStorage.setItem('agents_session', JSON.stringify({
+        walletAddress,
+        ghostAddress,
+        sessionToken,
+        completedSetup: currentStep > 3,
+      }));
+    }
+  }, [walletAddress, ghostAddress, sessionToken, currentStep]);
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 to-gray-900">
       {/* Header */}
@@ -114,6 +145,8 @@ export default function HomePage() {
                 sessionToken={sessionToken!}
                 onComplete={(data) => {
                   setAgentData(data);
+                  // Persist latest agent for Go Live / Dashboard
+                  localStorage.setItem('agents_last_agent', JSON.stringify(data));
                   setCurrentStep(3);
                 }}
               />

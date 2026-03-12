@@ -5,8 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Agents', icon: '⚡' },
-  { href: '/docs', label: 'Docs', icon: '📖' },
+  { href: '/dashboard', label: 'Agents' },
+  { href: '/', label: 'New Agent' },
 ];
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -15,7 +15,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-gray-950 flex">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-gray-800 p-4 hidden md:block">
+      <aside className="w-56 border-r border-gray-800 p-4 hidden md:block">
         <div className="flex items-center gap-3 mb-8 px-2">
           <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm text-white">
             LJ
@@ -33,7 +33,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                   : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
               }`}
             >
-              <span>{item.icon}</span>
               {item.label}
             </Link>
           ))}
