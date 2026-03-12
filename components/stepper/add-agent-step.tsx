@@ -92,13 +92,16 @@ export function AddAgentStep({ walletAddress, ghostAddress, sessionToken, onComp
 
       // 3. Sign auth entry with passkey (secp256r1 biometric prompt)
       setStatus('Approve with passkey (biometric prompt)...');
+      const { xdr: xdrLib } = await import('@stellar/stellar-sdk');
+      const authEntryObj = xdrLib.SorobanAuthorizationEntry.fromXDR(authEntryXdr, 'base64');
       const { signWithPasskey } = await import('@/lib/passkey/crossmint-webauthn');
-      const signedAuthEntryXdr = await signWithPasskey(
-        authEntryXdr,
+      const signedAuthEntry = await signWithPasskey(
+        authEntryObj,
         credentialId,
         networkPassphrase,
         parseInt(latestLedger),
       );
+      const signedAuthEntryXdr = signedAuthEntry.toXDR('base64');
 
       // 4. Finalize TX (inject signed auth entry + optimize footprint)
       setStatus('Finalizing transaction...');
