@@ -23,7 +23,7 @@ export function GoLiveStep({ walletAddress, agentData }: GoLiveStepProps) {
 
 const signer = new KeypoSigner({
   keyLabel: '${keyLabel}',
-  publicKey: Buffer.from('${agentData?.agent?.signer_public_key || '04...YOUR_PUBLIC_KEY_HEX'}', 'hex'),
+  publicKey: Buffer.from('${agentData?.agent?.signer_public_key || '04...YOUR_PUBLIC_KEY_BASE64'}', 'base64'),
 });
 
 const client = new SmartWalletClient({
