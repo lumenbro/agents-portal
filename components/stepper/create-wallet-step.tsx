@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -17,6 +17,26 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState('');
+  const [webviewWarning, setWebviewWarning] = useState<string | null>(null);
+
+  // Check for webview / passkey availability on mount
+  useEffect(() => {
+    (async () => {
+      const { detectWebViewEnvironment, shouldShowPasskeyWarning, getWebViewPlatformName } = await import('@/lib/webview-detection');
+      const env = detectWebViewEnvironment();
+      if (shouldShowPasskeyWarning(env)) {
+        setWebviewWarning(
+          `Passkeys may not work in ${getWebViewPlatformName(env)}. Open this page in Safari or Chrome instead.`
+        );
+        return;
+      }
+      const { checkPasskeyAvailability, getPasskeyUnavailableReason } = await import('@/lib/passkey-availability');
+      const availability = await checkPasskeyAvailability();
+      if (!availability.available) {
+        setWebviewWarning(getPasskeyUnavailableReason(availability));
+      }
+    })();
+  }, []);
 
   const handleRegister = async () => {
     if (!userName.trim()) {
@@ -108,6 +128,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
           challenge: challenge2,
           signature: ghostSig2,
           passkeyPublicKeyBase64: publicKey,
+          credentialId,
         }),
       });
       const tokenData = await tokenRes.json();
@@ -152,6 +173,12 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
           This name is stored locally with your passkey.
         </p>
       </div>
+
+      {webviewWarning && (
+        <div className="bg-yellow-900/30 border border-yellow-800 rounded-lg p-3 text-sm text-yellow-400">
+          {webviewWarning}
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-900/30 border border-red-800 rounded-lg p-3 text-sm text-red-400">

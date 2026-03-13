@@ -74,12 +74,16 @@ export async function POST(request: NextRequest) {
       return createErrorResponse(ERROR_CODES.WALLET_DEPLOYMENT_FAILED, result.error || 'Deployment failed', 500);
     }
 
-    // Store in Supabase
+    // Store in Supabase (include credential ID for passkey discovery login)
     try {
       const supabase = getSupabaseAdmin();
+      const credentialId = signers?.[0]?.keyId || null;
+      const publicKeyBase64 = signers?.[0]?.publicKey || null;
       await supabase.from('wallets').upsert({
         wallet_address: result.walletAddress,
         network: isMainnet() ? 'mainnet' : 'testnet',
+        passkey_credential_id: credentialId,
+        passkey_public_key: publicKeyBase64,
         created_at: new Date().toISOString(),
       }, { onConflict: 'wallet_address' });
     } catch (dbError) {

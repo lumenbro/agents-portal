@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { CreateWalletStep } from '@/components/stepper/create-wallet-step';
 import { FundWalletStep } from '@/components/stepper/fund-wallet-step';
@@ -21,6 +21,8 @@ export default function HomePage() {
   const [ghostAddress, setGhostAddress] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [agentData, setAgentData] = useState<any>(null);
+  const [signingIn, setSigningIn] = useState(false);
+  const [signInError, setSignInError] = useState<string | null>(null);
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -32,10 +34,13 @@ export default function HomePage() {
           setWalletAddress(session.walletAddress);
           setGhostAddress(session.ghostAddress);
           setSessionToken(session.sessionToken);
-          // If they already completed setup, go to step 4 (Go Live) or redirect to dashboard
+          // If they already completed setup, redirect to dashboard
           if (session.completedSetup) {
             window.location.href = '/dashboard';
+            return;
           }
+          // Wallet exists but setup not finished — skip to step 2 (Add Agent)
+          setCurrentStep(2);
         }
       }
     } catch { /* ignore corrupt storage */ }
@@ -52,6 +57,121 @@ export default function HomePage() {
       }));
     }
   }, [walletAddress, ghostAddress, sessionToken, currentStep]);
+
+  // Passkey discovery login for returning users
+  const handleSignIn = async () => {
+    setSigningIn(true);
+    setSignInError(null);
+
+    try {
+      const { getWebAuthnRpId } = await import('@/lib/passkey/webauthn-rpid');
+      const rpId = getWebAuthnRpId();
+
+      // Discoverable credential flow — browser shows all passkeys for this rpId
+      const credential = await navigator.credentials.get({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          rpId,
+          timeout: 60000,
+          userVerification: 'preferred',
+          allowCredentials: [], // Empty = show all discoverable credentials
+        },
+      }) as PublicKeyCredential | null;
+
+      if (!credential) {
+        setSignInError('No passkey selected.');
+        return;
+      }
+
+      // Encode credential ID as base64url (matches registration format)
+      const base64url = (await import('base64url')).default;
+      const credentialId = base64url.encode(Buffer.from(credential.rawId));
+
+      // Look up wallet by credential ID
+      const lookupRes = await fetch('/api/wallet/lookup-by-credential', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credentialId }),
+      });
+
+      if (!lookupRes.ok) {
+        throw new Error('Failed to look up wallet');
+      }
+
+      const lookupData = await lookupRes.json();
+      if (!lookupData.data?.found || !lookupData.data?.walletAddress) {
+        setSignInError('No wallet found for this passkey. You may need to create a new one.');
+        return;
+      }
+
+      const { walletAddress: foundWallet, ghostAddress: foundGhost, passkeyPublicKey } = lookupData.data;
+
+      // Store passkey info for ghost derivation + future operations
+      localStorage.setItem('agents_passkey', JSON.stringify({
+        credentialId,
+        publicKey: passkeyPublicKey,
+        walletAddress: foundWallet,
+        ghostAddress: foundGhost,
+      }));
+
+      // If we have ghost address + passkey public key, derive ghost keypair and get session token
+      if (passkeyPublicKey) {
+        const { deriveGhostKeypairSecure } = await import('@/lib/ghost-address-derivation');
+        const ghostKeypair = await deriveGhostKeypairSecure(passkeyPublicKey);
+        const derivedGhost = ghostKeypair.publicKey();
+
+        // Get challenge and sign with ghost keypair
+        const challengeRes = await fetch('/api/paymaster/challenge');
+        const challengeJson = await challengeRes.json();
+        const challenge = challengeJson.data?.challenge || challengeJson.challenge;
+
+        const challengeBytes = Buffer.from(challenge, 'hex');
+        const sig = ghostKeypair.sign(challengeBytes).toString('base64');
+
+        // Get session token
+        const tokenRes = await fetch('/api/auth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ghostAddress: derivedGhost,
+            walletAddress: foundWallet,
+            challenge,
+            signature: sig,
+            passkeyPublicKeyBase64: passkeyPublicKey,
+            credentialId,
+          }),
+        });
+
+        const tokenData = await tokenRes.json();
+        const token = tokenData.data?.token || tokenData.token;
+
+        if (token) {
+          localStorage.setItem('agents_session', JSON.stringify({
+            walletAddress: foundWallet,
+            ghostAddress: derivedGhost,
+            sessionToken: token,
+            completedSetup: true,
+          }));
+
+          window.location.href = '/dashboard';
+          return;
+        }
+      }
+
+      // Fallback: we found the wallet but can't get a session token
+      // (missing ghost address or passkey public key in DB)
+      setSignInError('Wallet found but session could not be restored. Please contact support.');
+    } catch (err: any) {
+      if (err.name === 'NotAllowedError') {
+        setSignInError('Passkey authentication was cancelled.');
+      } else {
+        console.error('[SignIn] Error:', err);
+        setSignInError(err.message || 'Sign in failed.');
+      }
+    } finally {
+      setSigningIn(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 to-gray-900">
@@ -166,6 +286,30 @@ export default function HomePage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Sign In for returning users — only show on step 1 (no active session) */}
+        {currentStep === 1 && !walletAddress && (
+          <div className="mt-6 text-center">
+            <div className="flex items-center gap-3 justify-center mb-3">
+              <div className="h-px bg-gray-800 flex-1" />
+              <span className="text-xs text-gray-500 uppercase tracking-wide">Already have a wallet?</span>
+              <div className="h-px bg-gray-800 flex-1" />
+            </div>
+
+            {signInError && (
+              <p className="text-sm text-red-400 mb-3">{signInError}</p>
+            )}
+
+            <Button
+              variant="outline"
+              onClick={handleSignIn}
+              disabled={signingIn}
+              className="border-gray-700 text-gray-300 hover:text-white hover:border-gray-600"
+            >
+              {signingIn ? 'Authenticating...' : 'Sign in with Passkey'}
+            </Button>
+          </div>
+        )}
       </main>
     </div>
   );

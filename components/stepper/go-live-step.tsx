@@ -19,13 +19,16 @@ export function GoLiveStep({ walletAddress, agentData }: GoLiveStepProps) {
 
   // SE (Secp256r1) snippets — uses keypo-signer for hardware-bound signing
   const seSnippets = {
-    typescript: `import { SmartWalletClient } from 'lumenjoule-sdk';
+    typescript: `import { SmartWalletClient, KeypoSigner } from 'lumenjoule-sdk';
+
+const signer = new KeypoSigner({
+  keyLabel: '${keyLabel}',
+  publicKey: Buffer.from('${agentData?.agent?.signer_public_key || '04...YOUR_PUBLIC_KEY_HEX'}', 'hex'),
+});
 
 const client = new SmartWalletClient({
-  // Secure Enclave key — private key never leaves hardware
-  keypoLabel: '${keyLabel}',
+  signer,
   walletAddress: '${walletAddress}',
-  computeUrl: 'https://compute.lumenbro.com',
   network: 'mainnet',
 });
 

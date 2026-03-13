@@ -3,10 +3,11 @@ import { Keypair } from '@stellar/stellar-sdk';
 import { createSessionToken } from '@/lib/api-session-token';
 import { createErrorResponse, createSuccessResponse, ERROR_CODES } from '@/lib/api-error';
 import { deriveGhostKeypairServerSide } from '@/lib/ghost-address-derivation';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
   try {
-    const { ghostAddress, walletAddress: clientWalletAddress, challenge, signature, passkeyPublicKeyBase64 } = await request.json();
+    const { ghostAddress, walletAddress: clientWalletAddress, challenge, signature, passkeyPublicKeyBase64, credentialId } = await request.json();
 
     if (!ghostAddress || !challenge || !signature) {
       return createErrorResponse(ERROR_CODES.MISSING_PARAMS, 'Missing ghostAddress, challenge, or signature', 400);
@@ -23,6 +24,24 @@ export async function POST(request: NextRequest) {
 
     // Use the smart wallet C-address if provided, otherwise fall back to ghost
     const walletAddress = clientWalletAddress || ghostAddress;
+
+    // Persist ghost_address + passkey data to wallet record
+    try {
+      const supabase = getSupabaseAdmin();
+      const updateData: Record<string, any> = {
+        ghost_address: ghostAddress,
+        passkey_public_key: passkeyPublicKeyBase64 || null,
+      };
+      if (credentialId) {
+        updateData.passkey_credential_id = credentialId;
+      }
+      await supabase
+        .from('wallets')
+        .update(updateData)
+        .eq('wallet_address', walletAddress);
+    } catch (dbError) {
+      console.warn('[AuthToken] DB update failed (non-critical):', dbError);
+    }
 
     const token = createSessionToken(walletAddress, ghostAddress);
     return createSuccessResponse({ token, expiresIn: 86400 });
