@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
     const validation = await validateRequest(request, walletDeploySchema);
     if (validation.error) return validation.error;
 
-    const { userId, signers, recoverySigner, salt } = validation.data;
+    const { userId, signers, recoverySigner, salt, email } = validation.data;
 
     const service = await getDeploymentService();
 
@@ -79,13 +79,17 @@ export async function POST(request: NextRequest) {
       const supabase = getSupabaseAdmin();
       const credentialId = signers?.[0]?.keyId || null;
       const publicKeyBase64 = signers?.[0]?.publicKey || null;
-      await supabase.from('wallets').upsert({
+      const walletData: Record<string, any> = {
         wallet_address: result.walletAddress,
         network: isMainnet() ? 'mainnet' : 'testnet',
         passkey_credential_id: credentialId,
         passkey_public_key: publicKeyBase64,
         created_at: new Date().toISOString(),
-      }, { onConflict: 'wallet_address' });
+      };
+      if (email) {
+        walletData.email = email.trim().toLowerCase();
+      }
+      await supabase.from('wallets').upsert(walletData, { onConflict: 'wallet_address' });
     } catch (dbError) {
       console.warn('[WalletDeploy] DB storage failed (non-critical):', dbError);
     }

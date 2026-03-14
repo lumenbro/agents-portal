@@ -83,10 +83,19 @@ export function convertEcdsaSignatureAsnToCompact(derSignature: Buffer): Buffer 
 
 /**
  * Register a new passkey (WebAuthn credential)
+ *
+ * @param userName - Display name for the passkey
+ * @param rpName - Relying party name
+ * @param options.email - Email for deterministic user.id (prevents duplicate registrations)
+ * @param options.excludeCredentialIds - Existing credential IDs to prevent re-registration
  */
 export async function registerPasskey(
   userName: string,
-  rpName: string = 'LumenBro Agents'
+  rpName: string = 'LumenBro Agents',
+  options?: {
+    email?: string;
+    excludeCredentialIds?: string[];
+  }
 ): Promise<{
   credentialId: string; // base64url encoded
   publicKey: string; // base64 encoded (65 bytes uncompressed)
@@ -99,9 +108,21 @@ export async function registerPasskey(
     throw new Error('WebAuthn is not available in this browser.');
   }
 
-  const userIdInput = `${userName}-${Date.now()}`;
+  // Use email for deterministic user.id so the same email always maps to
+  // the same WebAuthn user — browser/authenticator will block duplicates
+  const userIdInput = options?.email
+    ? options.email.trim().toLowerCase()
+    : `${userName}-${Date.now()}`;
   const userIdHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(userIdInput));
   const userId = new Uint8Array(userIdHash).slice(0, 16);
+
+  // Build excludeCredentials to prevent re-registration on same device
+  const base64url = (await import('base64url')).default;
+  const excludeCredentials: PublicKeyCredentialDescriptor[] = (options?.excludeCredentialIds || []).map(id => ({
+    type: 'public-key' as const,
+    id: Uint8Array.from(base64url.toBuffer(id)),
+    transports: ['internal' as const],
+  }));
 
   let credential: any;
   try {
@@ -114,13 +135,14 @@ export async function registerPasskey(
         },
         user: {
           id: userId,
-          name: userName,
+          name: options?.email || userName,
           displayName: userName,
         },
         pubKeyCredParams: [
           { alg: -7, type: 'public-key' },   // ES256 (secp256r1)
           { alg: -257, type: 'public-key' }, // RS256 fallback
         ],
+        excludeCredentials,
         authenticatorSelection: {
           userVerification: 'required',
           residentKey: 'required',
@@ -137,7 +159,7 @@ export async function registerPasskey(
     } else if (error.name === 'NotAllowedError') {
       throw new Error('Passkey registration was cancelled. Please try again.');
     } else if (error.name === 'InvalidStateError') {
-      throw new Error('A passkey already exists for this device.');
+      throw new Error('A wallet already exists for this email. Use "Sign in with passkey" instead.');
     }
     throw error;
   }
@@ -146,7 +168,6 @@ export async function registerPasskey(
     throw new Error('Passkey registration cancelled');
   }
 
-  const base64url = (await import('base64url')).default;
   const credentialId = base64url.encode(Buffer.from(credential.rawId));
 
   const response = credential.response as any;

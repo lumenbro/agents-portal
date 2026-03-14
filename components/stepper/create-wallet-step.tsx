@@ -13,6 +13,7 @@ interface CreateWalletStepProps {
 }
 
 export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
+  const [email, setEmail] = useState('');
   const [userName, setUserName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +39,14 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
     })();
   }, []);
 
+  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
+
   const handleRegister = async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
+      setError('Please enter a valid email address');
+      return;
+    }
     if (!userName.trim()) {
       setError('Please enter a display name');
       return;
@@ -48,9 +56,31 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
     setError(null);
 
     try {
+      // Check if email already has a wallet
+      setStatus('Checking account...');
+      const lookupRes = await fetch('/api/wallet/lookup-by-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmedEmail }),
+      });
+
+      if (lookupRes.ok) {
+        const lookupData = await lookupRes.json();
+        if (lookupData.data?.found) {
+          setError(
+            'A wallet already exists for this email. Click "Sign in with existing passkey" above to access it.'
+          );
+          setLoading(false);
+          setStatus('');
+          return;
+        }
+      }
+
       setStatus('Registering passkey...');
       const { registerPasskey } = await import('@/lib/passkey/crossmint-webauthn');
-      const { credentialId, publicKey } = await registerPasskey(userName);
+      const { credentialId, publicKey } = await registerPasskey(userName, 'LumenBro Agents', {
+        email: trimmedEmail,
+      });
 
       setStatus('Deploying smart wallet...');
       const deployRes = await fetch('/api/wallet/deploy', {
@@ -58,6 +88,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: crypto.randomUUID(),
+          email: trimmedEmail,
           signers: [{
             type: 'Secp256r1',
             keyId: credentialId,
@@ -140,6 +171,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
           publicKey,
           walletAddress,
           ghostAddress,
+          email: trimmedEmail,
         }));
       } catch {}
 
@@ -157,7 +189,24 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">
+          Email
+        </label>
+        <Input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+          className="bg-gray-800 border-gray-700 text-white"
+          disabled={loading}
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          Used to identify your wallet across devices. One wallet per email.
+        </p>
+      </div>
+
       <div>
         <label className="block text-sm font-medium text-gray-300 mb-2">
           Display Name
@@ -170,7 +219,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
           disabled={loading}
         />
         <p className="text-xs text-gray-500 mt-1">
-          This name is stored locally with your passkey.
+          Shown in your device&apos;s passkey manager.
         </p>
       </div>
 
@@ -194,7 +243,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
 
       <Button
         onClick={handleRegister}
-        disabled={loading || !userName.trim()}
+        disabled={loading || !userName.trim() || !email.trim()}
         className="w-full bg-blue-600 hover:bg-blue-700"
       >
         {loading ? 'Setting up...' : 'Register with Passkey'}

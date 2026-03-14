@@ -17,6 +17,7 @@ export const walletDeploySchema = z.object({
     publicKey: z.string().min(1, 'Recovery signer public key is required'),
   }).optional(),
   salt: z.string().optional(),
+  email: z.string().email().optional(),
 });
 
 export const assetSendSchema = z.object({
