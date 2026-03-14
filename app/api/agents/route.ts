@@ -170,11 +170,46 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Ed25519 path (default) ──
-    const agentKeypair = Keypair.random();
-    const publicKey = agentKeypair.publicKey();
-    const secretKey = agentKeypair.secret();
-    const encryptedSecret = encryptSecret(secretKey);
+    // Client generates keypair and sends only the public key.
+    // Secret key never touches the server (self-custodial).
+    const publicKey = body.publicKey;
 
+    if (!publicKey || typeof publicKey !== 'string') {
+      // Fallback: server-side generation for backward compatibility
+      const agentKeypair = Keypair.random();
+      const fallbackPublicKey = agentKeypair.publicKey();
+      const fallbackSecret = agentKeypair.secret();
+      const encryptedSecret = encryptSecret(fallbackSecret);
+
+      const { data: agent, error: insertError } = await supabase
+        .from('agents')
+        .insert({
+          wallet_id: wallet.id,
+          name,
+          signer_public_key: fallbackPublicKey,
+          signer_type: 'Ed25519',
+          encrypted_secret_key: encryptedSecret,
+          policy_tier_id: policyTier,
+          policy_address: policyAddress,
+          status: 'pending_signer',
+        })
+        .select('id, name, signer_public_key, signer_type, policy_tier_id, policy_address, status, created_at')
+        .single();
+
+      if (insertError) {
+        console.error('[Agents] Insert error:', insertError);
+        return NextResponse.json({ error: 'Failed to create agent' }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        agent,
+        secretKey: fallbackSecret,
+        signerType: 'Ed25519',
+        message: 'Save this secret key now. It will not be shown again.',
+      });
+    }
+
+    // Client-side generated key — store only the public key
     const { data: agent, error: insertError } = await supabase
       .from('agents')
       .insert({
@@ -182,7 +217,7 @@ export async function POST(request: NextRequest) {
         name,
         signer_public_key: publicKey,
         signer_type: 'Ed25519',
-        encrypted_secret_key: encryptedSecret,
+        // No encrypted_secret_key — self-custodial, client holds the secret
         policy_tier_id: policyTier,
         policy_address: policyAddress,
         status: 'pending_signer',
@@ -197,9 +232,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       agent,
-      secretKey,
       signerType: 'Ed25519',
-      message: 'Save this secret key now. It will not be shown again.',
+      message: 'Agent registered. Secret key is held client-side only.',
     });
   } catch (error: any) {
     console.error('[Agents] Create error:', error);

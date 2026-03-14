@@ -79,9 +79,21 @@ export function AddAgentStep({ walletAddress, ghostAddress, sessionToken, onComp
       const { deriveGhostKeypairSecure } = await import('@/lib/ghost-address-derivation');
       const ghostKeypair = await deriveGhostKeypairSecure(passkeyPublicKey);
 
-      // 1. Create agent in DB
-      setStatus(signerType === 'Secp256r1' ? 'Registering SE agent key...' : 'Generating agent keypair...');
+      // 1. Generate keypair client-side (Ed25519) or use provided key (Secp256r1)
+      let clientSecretKey: string | undefined;
+      let clientPublicKey: string | undefined;
+
       const selectedTier = tiers.find(t => t.tierId === policyTier);
+
+      if (signerType === 'Ed25519') {
+        setStatus('Generating agent keypair...');
+        const { Keypair } = await import('@stellar/stellar-sdk');
+        const agentKeypair = Keypair.random();
+        clientSecretKey = agentKeypair.secret();
+        clientPublicKey = agentKeypair.publicKey(); // G-address
+      } else {
+        setStatus('Registering SE agent key...');
+      }
 
       const agentBody: Record<string, any> = {
         name: agentName,
@@ -89,6 +101,10 @@ export function AddAgentStep({ walletAddress, ghostAddress, sessionToken, onComp
         policyAddress: selectedTier?.address,
         signerType,
       };
+
+      if (signerType === 'Ed25519' && clientPublicKey) {
+        agentBody.publicKey = clientPublicKey;
+      }
 
       if (signerType === 'Secp256r1') {
         agentBody.publicKeyBase64 = parsePublicKeyInput(sePublicKey);
@@ -111,7 +127,8 @@ export function AddAgentStep({ walletAddress, ghostAddress, sessionToken, onComp
 
       const agentJson = await res.json();
       const agent = agentJson.data?.agent || agentJson.agent;
-      const secretKey = agentJson.data?.secretKey || agentJson.secretKey;
+      // Secret key comes from client-side generation, NOT server
+      const secretKey = clientSecretKey;
 
       // 2. Build add_signer transaction (ghost as TX source for paymaster fee-bump)
       setStatus('Building add_signer transaction...');
@@ -264,9 +281,9 @@ export function AddAgentStep({ walletAddress, ghostAddress, sessionToken, onComp
             }`}
             disabled={loading}
           >
-            <div className="text-sm font-medium">Ed25519 (Cloud)</div>
+            <div className="text-sm font-medium">Ed25519</div>
             <div className="text-xs mt-1 opacity-70">
-              Server generates keypair. Secret key shown once.
+              Keypair generated in your browser. Save the secret key.
             </div>
           </button>
           <button

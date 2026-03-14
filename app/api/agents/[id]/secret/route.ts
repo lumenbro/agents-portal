@@ -59,21 +59,15 @@ export async function GET(
       return NextResponse.json({ error: 'Agent not found' }, { status: 404 });
     }
 
-    if (agent.secret_revealed) {
+    if (!agent.encrypted_secret_key) {
       return NextResponse.json(
-        { error: 'Secret key has already been revealed. It cannot be shown again.' },
-        { status: 403 }
+        { error: 'No secret key stored (hardware-bound signer).' },
+        { status: 404 }
       );
     }
 
     // Decrypt and return
     const secretKey = decryptSecret(agent.encrypted_secret_key);
-
-    // Mark as revealed
-    await supabase
-      .from('agents')
-      .update({ secret_revealed: true })
-      .eq('id', id);
 
     return NextResponse.json({
       secretKey,
