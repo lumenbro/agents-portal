@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 interface GoLiveStepProps {
   walletAddress: string;
   agentData: any;
+  recoverySecret?: string | null;
 }
 
-export function GoLiveStep({ walletAddress, agentData }: GoLiveStepProps) {
+export function GoLiveStep({ walletAddress, agentData, recoverySecret }: GoLiveStepProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const [tab, setTab] = useState<'typescript' | 'python' | 'curl'>('typescript');
 
@@ -179,6 +180,35 @@ print(response.json()['choices'][0]['message']['content'])`,
             </p>
           </div>
         )
+      )}
+
+      {/* Recovery key warning */}
+      {recoverySecret && (
+        <div className="bg-orange-900/30 border border-orange-800 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-orange-400 mb-2">
+            Recovery Secret Key — Save This Now
+          </h3>
+          <p className="text-xs text-orange-300 mb-3">
+            If you lose access to your passkey (device lost, wiped, or broken), this is the <strong>only way</strong> to
+            recover your wallet. It has full Admin access to your smart wallet.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="text-xs text-orange-300 bg-gray-800 rounded px-2 py-1 flex-1 break-all select-all font-mono">
+              {recoverySecret}
+            </code>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => copyToClipboard(recoverySecret, 'recovery')}
+              className="border-orange-700 text-orange-400 hover:bg-orange-900/50 shrink-0"
+            >
+              {copied === 'recovery' ? 'Copied!' : 'Copy'}
+            </Button>
+          </div>
+          <p className="text-xs text-orange-500 mt-2 font-medium">
+            This will NOT be shown again. Store it somewhere safe and offline.
+          </p>
+        </div>
       )}
 
       {/* Code snippets */}

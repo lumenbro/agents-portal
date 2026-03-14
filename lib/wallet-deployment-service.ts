@@ -303,9 +303,20 @@ export class WalletDeploymentService {
       // - NFT minting happens client-side after wallet deployment
       // - This eliminates per-transaction plugin footprint overhead (~1-2M instructions)
 
-      // Step 2: Build constructor args (signers + optional pre-deployed plugins)
+      // Step 2: Build constructor args (signers + recovery signer + optional plugins)
+      const allSigners = [...params.signers]
+
+      // Add recovery signer as Admin Ed25519 if provided
+      if (params.recoverySigner) {
+        allSigners.push({
+          type: 'Ed25519',
+          publicKey: params.recoverySigner.publicKey,
+          role: 'Admin',
+        })
+      }
+
       const constructorArgsScVal = this.buildConstructorArgs(
-        params.signers,
+        allSigners,
         params.plugins && params.plugins.length > 0 ? params.plugins : undefined
       )
 

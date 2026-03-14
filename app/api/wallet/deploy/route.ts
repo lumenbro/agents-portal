@@ -63,10 +63,21 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    // Build recovery signer if provided
+    let deployRecoverySigner: { type: 'Ed25519'; publicKey: Uint8Array } | undefined;
+    if (recoverySigner) {
+      const recoveryPubKeyBytes = Buffer.from(recoverySigner.publicKey, 'base64');
+      deployRecoverySigner = {
+        type: 'Ed25519',
+        publicKey: new Uint8Array(recoveryPubKeyBytes),
+      };
+    }
+
     const result = await service.deployWallet({
       userId,
       email: '',
       signers: deploySigners,
+      recoverySigner: deployRecoverySigner,
       salt: salt ? new Uint8Array(Buffer.from(salt, 'base64')) : undefined,
     });
 
@@ -88,6 +99,9 @@ export async function POST(request: NextRequest) {
       };
       if (email) {
         walletData.email = email.trim().toLowerCase();
+      }
+      if (recoverySigner?.publicKey) {
+        walletData.recovery_public_key = recoverySigner.publicKey;
       }
       await supabase.from('wallets').upsert(walletData, { onConflict: 'wallet_address' });
     } catch (dbError) {

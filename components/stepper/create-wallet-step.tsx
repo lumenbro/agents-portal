@@ -9,6 +9,7 @@ interface CreateWalletStepProps {
     walletAddress: string;
     ghostAddress: string;
     sessionToken: string;
+    recoverySecret?: string;
   }) => void;
 }
 
@@ -82,6 +83,12 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
         email: trimmedEmail,
       });
 
+      setStatus('Generating recovery key...');
+      const { Keypair } = await import('@stellar/stellar-sdk');
+      const recoveryKeypair = Keypair.random();
+      const recoverySecret = recoveryKeypair.secret();
+      const recoveryPublicKeyBase64 = Buffer.from(recoveryKeypair.rawPublicKey()).toString('base64');
+
       setStatus('Deploying smart wallet...');
       const deployRes = await fetch('/api/wallet/deploy', {
         method: 'POST',
@@ -95,6 +102,10 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
             publicKey,
             role: 'Admin',
           }],
+          recoverySigner: {
+            type: 'Ed25519',
+            publicKey: recoveryPublicKeyBase64,
+          },
         }),
       });
 
@@ -179,6 +190,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
         walletAddress,
         ghostAddress,
         sessionToken: tokenData.data?.token || tokenData.token || '',
+        recoverySecret,
       });
     } catch (err: any) {
       setError(err.message);

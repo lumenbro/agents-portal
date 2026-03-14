@@ -7,6 +7,7 @@ import { CreateWalletStep } from '@/components/stepper/create-wallet-step';
 import { FundWalletStep } from '@/components/stepper/fund-wallet-step';
 import { AddAgentStep } from '@/components/stepper/add-agent-step';
 import { GoLiveStep } from '@/components/stepper/go-live-step';
+import { Input } from '@/components/ui/input';
 
 const STEPS = [
   { id: 1, title: 'Create Wallet', description: 'Register with Face ID. No seed phrases.' },
@@ -21,8 +22,13 @@ export default function HomePage() {
   const [ghostAddress, setGhostAddress] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [agentData, setAgentData] = useState<any>(null);
+  const [recoverySecret, setRecoverySecret] = useState<string | null>(null);
   const [signingIn, setSigningIn] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState('');
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
   // Restore session from localStorage on mount
   useEffect(() => {
@@ -173,6 +179,95 @@ export default function HomePage() {
     }
   };
 
+  // Recovery login with S-address
+  const handleRecoveryLogin = async () => {
+    const trimmed = recoveryInput.trim();
+    if (!trimmed.startsWith('S') || trimmed.length !== 56) {
+      setRecoveryError('Please enter a valid Stellar secret key (starts with S, 56 characters).');
+      return;
+    }
+
+    setRecoveryLoading(true);
+    setRecoveryError(null);
+
+    try {
+      const { Keypair } = await import('@stellar/stellar-sdk');
+      let recoveryKeypair: InstanceType<typeof Keypair>;
+      try {
+        recoveryKeypair = Keypair.fromSecret(trimmed);
+      } catch {
+        setRecoveryError('Invalid secret key format.');
+        return;
+      }
+
+      const recoveryGAddress = recoveryKeypair.publicKey();
+      const recoveryPubBase64 = Buffer.from(recoveryKeypair.rawPublicKey()).toString('base64');
+
+      // Look up wallet by recovery public key
+      const lookupRes = await fetch('/api/wallet/lookup-by-recovery-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recoveryPublicKey: recoveryPubBase64 }),
+      });
+
+      if (!lookupRes.ok) {
+        throw new Error('Failed to look up wallet');
+      }
+
+      const lookupData = await lookupRes.json();
+      if (!lookupData.data?.found || !lookupData.data?.walletAddress) {
+        setRecoveryError('No wallet found for this recovery key.');
+        return;
+      }
+
+      const foundWallet = lookupData.data.walletAddress;
+
+      // Get challenge and sign with recovery keypair
+      const challengeRes = await fetch('/api/paymaster/challenge');
+      const challengeJson = await challengeRes.json();
+      const challenge = challengeJson.data?.challenge || challengeJson.challenge;
+
+      const challengeBytes = Buffer.from(challenge, 'hex');
+      const sig = recoveryKeypair.sign(challengeBytes).toString('base64');
+
+      // Get session token using recovery key as signer
+      const tokenRes = await fetch('/api/auth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ghostAddress: recoveryGAddress,
+          walletAddress: foundWallet,
+          challenge,
+          signature: sig,
+          isRecovery: true,
+        }),
+      });
+
+      const tokenData = await tokenRes.json();
+      const token = tokenData.data?.token || tokenData.token;
+
+      if (token) {
+        localStorage.setItem('agents_session', JSON.stringify({
+          walletAddress: foundWallet,
+          ghostAddress: recoveryGAddress,
+          sessionToken: token,
+          completedSetup: true,
+          isRecovery: true,
+        }));
+
+        window.location.href = '/dashboard';
+        return;
+      }
+
+      setRecoveryError('Authentication failed. Please try again.');
+    } catch (err: any) {
+      console.error('[Recovery] Error:', err);
+      setRecoveryError(err.message || 'Recovery failed.');
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-950 to-gray-900">
       {/* Header */}
@@ -252,6 +347,7 @@ export default function HomePage() {
                   setWalletAddress(data.walletAddress);
                   setGhostAddress(data.ghostAddress);
                   setSessionToken(data.sessionToken);
+                  if (data.recoverySecret) setRecoverySecret(data.recoverySecret);
                   setCurrentStep(2);
                 }}
               />
@@ -280,6 +376,7 @@ export default function HomePage() {
               <GoLiveStep
                 walletAddress={walletAddress!}
                 agentData={agentData}
+                recoverySecret={recoverySecret}
               />
             )}
           </CardContent>
@@ -306,6 +403,42 @@ export default function HomePage() {
             >
               {signingIn ? 'Authenticating...' : 'Sign in with Passkey'}
             </Button>
+
+            <button
+              onClick={() => { setShowRecovery(!showRecovery); setRecoveryError(null); }}
+              className="block mx-auto mt-3 text-xs text-gray-600 hover:text-gray-400 transition-colors"
+            >
+              {showRecovery ? 'Hide recovery' : 'Lost your passkey? Recover with secret key'}
+            </button>
+
+            {showRecovery && (
+              <div className="mt-4 bg-gray-900 border border-gray-800 rounded-lg p-4 text-left">
+                <h3 className="text-sm font-medium text-gray-300 mb-2">
+                  Recover with Secret Key
+                </h3>
+                <p className="text-xs text-gray-500 mb-3">
+                  Enter the recovery secret key (S...) that was shown when you created your wallet.
+                </p>
+                <Input
+                  type="password"
+                  value={recoveryInput}
+                  onChange={(e) => setRecoveryInput(e.target.value)}
+                  placeholder="S..."
+                  className="bg-gray-800 border-gray-700 text-white font-mono text-sm mb-3"
+                  disabled={recoveryLoading}
+                />
+                {recoveryError && (
+                  <p className="text-sm text-red-400 mb-3">{recoveryError}</p>
+                )}
+                <Button
+                  onClick={handleRecoveryLogin}
+                  disabled={recoveryLoading || !recoveryInput.trim()}
+                  className="w-full bg-orange-600 hover:bg-orange-700"
+                >
+                  {recoveryLoading ? 'Recovering...' : 'Recover Wallet'}
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </main>
