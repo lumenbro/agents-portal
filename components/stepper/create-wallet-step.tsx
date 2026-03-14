@@ -20,6 +20,7 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState('');
   const [webviewWarning, setWebviewWarning] = useState<string | null>(null);
+  const [setupRecovery, setSetupRecovery] = useState(false);
 
   // Check for webview / passkey availability on mount
   useEffect(() => {
@@ -83,30 +84,37 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
         email: trimmedEmail,
       });
 
-      setStatus('Generating recovery key...');
-      const { Keypair } = await import('@stellar/stellar-sdk');
-      const recoveryKeypair = Keypair.random();
-      const recoverySecret = recoveryKeypair.secret();
-      const recoveryPublicKeyBase64 = Buffer.from(recoveryKeypair.rawPublicKey()).toString('base64');
+      let recoverySecret: string | undefined;
+      let recoverySigner: { type: 'Ed25519'; publicKey: string } | undefined;
+
+      if (setupRecovery) {
+        setStatus('Generating recovery key...');
+        const { Keypair } = await import('@stellar/stellar-sdk');
+        const recoveryKeypair = Keypair.random();
+        recoverySecret = recoveryKeypair.secret();
+        const recoveryPublicKeyBase64 = Buffer.from(recoveryKeypair.rawPublicKey()).toString('base64');
+        recoverySigner = { type: 'Ed25519', publicKey: recoveryPublicKeyBase64 };
+      }
 
       setStatus('Deploying smart wallet...');
+      const deployBody: Record<string, any> = {
+        userId: crypto.randomUUID(),
+        email: trimmedEmail,
+        signers: [{
+          type: 'Secp256r1',
+          keyId: credentialId,
+          publicKey,
+          role: 'Admin',
+        }],
+      };
+      if (recoverySigner) {
+        deployBody.recoverySigner = recoverySigner;
+      }
+
       const deployRes = await fetch('/api/wallet/deploy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId: crypto.randomUUID(),
-          email: trimmedEmail,
-          signers: [{
-            type: 'Secp256r1',
-            keyId: credentialId,
-            publicKey,
-            role: 'Admin',
-          }],
-          recoverySigner: {
-            type: 'Ed25519',
-            publicKey: recoveryPublicKeyBase64,
-          },
-        }),
+        body: JSON.stringify(deployBody),
       });
 
       if (!deployRes.ok) {
@@ -233,6 +241,27 @@ export function CreateWalletStep({ onComplete }: CreateWalletStepProps) {
         <p className="text-xs text-gray-500 mt-1">
           Shown in your device&apos;s passkey manager.
         </p>
+      </div>
+
+      <div>
+        <label className="flex items-start gap-3 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={setupRecovery}
+            onChange={(e) => setSetupRecovery(e.target.checked)}
+            disabled={loading}
+            className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-800 text-blue-600 focus:ring-blue-500"
+          />
+          <div>
+            <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">
+              Set up recovery key
+            </span>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Generate a backup secret key (S...) in case you lose your passkey.
+              You can also set this up later from the dashboard.
+            </p>
+          </div>
+        </label>
       </div>
 
       {webviewWarning && (
