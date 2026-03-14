@@ -19,12 +19,13 @@ export function GoLiveStep({ walletAddress, agentData }: GoLiveStepProps) {
 
   // SE (Secp256r1) snippets — uses keypo-signer for hardware-bound signing
   const seSnippets = {
-    typescript: `import { SmartWalletClient, KeypoSigner } from 'lumenjoule-sdk';
+    typescript: `import { SmartWalletClient, SoftP256Signer } from 'lumenjoule-sdk';
 
-const signer = new KeypoSigner({
-  keyLabel: '${keyLabel}',
-  publicKey: Buffer.from('${agentData?.agent?.signer_public_key || '04...YOUR_PUBLIC_KEY_BASE64'}', 'base64'),
-});
+// Load your encrypted P-256 key (generate first: SoftP256Signer.generate('password'))
+const signer = await SoftP256Signer.load(
+  process.env.KEY_PASSWORD!,
+  '~/.lumenjoule/agent-key.enc',
+);
 
 const client = new SmartWalletClient({
   signer,
@@ -37,7 +38,14 @@ const response = await client.chat({
   messages: [{ role: 'user', content: 'Hello!' }],
 });
 
-console.log(response.choices[0].message.content);`,
+console.log(response.choices[0].message.content);
+
+// macOS with Secure Enclave? Use KeypoSigner instead:
+// import { KeypoSigner } from 'lumenjoule-sdk';
+// const signer = new KeypoSigner({
+//   keyLabel: '${keyLabel}',
+//   publicKey: Buffer.from('${agentData?.agent?.signer_public_key || 'YOUR_PUBLIC_KEY_BASE64'}', 'base64'),
+// });`,
     python: `# Secure Enclave signing requires keypo-signer on the host machine.
 # The SDK shells out to: keypo-signer sign <hash> --key ${keyLabel}
 import subprocess, json, requests
