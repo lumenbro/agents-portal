@@ -97,12 +97,26 @@ export default function DashboardPage() {
   const handleManualRefresh = async () => {
     try {
       const { clearBrowserSessionToken } = await import('@/lib/authenticated-fetch');
-      clearBrowserSessionToken(); // Force re-acquire
+      const { refreshSessionToken } = await import('@/lib/session-refresh');
+      clearBrowserSessionToken(); // Clear stale tokens everywhere
+
+      // Force a fresh token acquisition before retrying
+      const result = await refreshSessionToken();
+      if (result.sessionToken) {
+        // refreshSessionToken already updates localStorage, but ensure it's there
+        const saved = JSON.parse(localStorage.getItem('agents_session') || '{}');
+        saved.sessionToken = result.sessionToken;
+        localStorage.setItem('agents_session', JSON.stringify(saved));
+      }
+
       setSessionExpired(false);
       setLoading(true);
       if (walletAddress) fetchAgents(walletAddress);
-    } catch {
-      setSessionExpired(true);
+    } catch (e) {
+      console.error('[Dashboard] Manual refresh failed:', e);
+      // If silent refresh fails, redirect to home for full passkey re-auth
+      localStorage.removeItem('agents_session');
+      window.location.href = '/';
     }
   };
 

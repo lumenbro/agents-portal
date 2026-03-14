@@ -84,6 +84,16 @@ export function clearBrowserSessionToken(): void {
     sessionStorage.removeItem(STORAGE_KEY);
     sessionStorage.removeItem(STORAGE_EXPIRES_KEY);
   } catch { /* ignore */ }
+  // Also clear the stale token from localStorage so getCachedToken()
+  // doesn't return it as a fallback
+  try {
+    const saved = localStorage.getItem('agents_session');
+    if (saved) {
+      const session = JSON.parse(saved);
+      delete session.sessionToken;
+      localStorage.setItem('agents_session', JSON.stringify(session));
+    }
+  } catch { /* ignore */ }
 }
 
 // ============================================================================
@@ -165,5 +175,21 @@ export async function authFetch(
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  return fetch(input, { ...init, headers });
+  const res = await fetch(input, { ...init, headers });
+
+  // Auto-retry once on 401: clear stale token, acquire fresh, retry
+  if (res.status === 401 && token) {
+    clearBrowserSessionToken();
+    const freshToken = await acquireToken();
+    if (freshToken && freshToken !== token) {
+      const retryHeaders = new Headers(init?.headers);
+      if (!retryHeaders.has('Content-Type') && init?.body) {
+        retryHeaders.set('Content-Type', 'application/json');
+      }
+      retryHeaders.set('Authorization', `Bearer ${freshToken}`);
+      return fetch(input, { ...init, headers: retryHeaders });
+    }
+  }
+
+  return res;
 }
