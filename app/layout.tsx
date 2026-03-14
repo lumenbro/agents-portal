@@ -6,8 +6,13 @@ import { Toaster } from 'sonner';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'LumenBro Agents Portal',
-  description: 'Create and manage AI agent wallets with passkey-secured spend policies',
+  title: 'LumenBro Agents',
+  description: 'Self-custodial AI agent wallets on Stellar. On-chain spend policies, pluggable signers, x402 payments.',
+  openGraph: {
+    title: 'LumenBro Agents',
+    description: 'Self-custodial AI agent wallets on Stellar with on-chain spend policies.',
+    images: [{ url: '/og-icon.png', width: 512, height: 512 }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

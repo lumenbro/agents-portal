@@ -17,9 +17,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       {/* Sidebar */}
       <aside className="w-56 border-r border-gray-800 p-4 hidden md:block">
         <div className="flex items-center gap-3 mb-8 px-2">
-          <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm text-white">
-            LJ
-          </div>
+          <img src="/logo.png" alt="LumenBro" className="w-8 h-8 rounded-lg" />
           <span className="text-lg font-semibold text-white">Agents</span>
         </div>
         <nav className="space-y-1">

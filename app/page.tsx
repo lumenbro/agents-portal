@@ -179,9 +179,7 @@ export default function HomePage() {
       <header className="border-b border-gray-800 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center font-bold text-sm">
-              LJ
-            </div>
+            <img src="/logo.png" alt="LumenBro" className="w-8 h-8 rounded-lg" />
             <span className="text-lg font-semibold text-white">LumenBro Agents</span>
           </div>
           <div className="flex items-center gap-4">
