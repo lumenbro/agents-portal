@@ -1,0 +1,246 @@
+# LumenBro Agents — Agent Wallet SDK
+
+> Self-custodial AI agent wallets on Stellar with on-chain spend policies and x402 payments.
+
+## Overview
+
+LumenBro Agents provides AI agents with self-custodial wallets on the Stellar blockchain. Each wallet is a Soroban smart account (C-address) that holds USDC and enforces daily spending limits via on-chain ExternalValidatorPolicy contracts. Agent signing keys are generated and stored on the operator's device — the server never touches private keys.
+
+The SDK (`lumenjoule-sdk` on npm) handles x402 payments automatically: request → 402 → sign payment → retry → response.
+
+## Links
+
+- Portal: https://agents.lumenbro.com
+- Docs: https://agents.lumenbro.com/docs
+- npm: https://www.npmjs.com/package/lumenjoule-sdk
+- GitHub SDK: https://github.com/lumenbro/lumenjoule-sdk
+- GitHub Smart Account: https://github.com/lumenbro/stellar-smart-account
+- GitHub Spend Policies: https://github.com/lumenbro/soroban-policies
+- Compute Server: https://compute.lumenbro.com
+- x402 Protocol: https://x402.org
+- LumenJoule Token: https://joule.lumenbro.com
+
+## Quick Start
+
+```bash
+npm install lumenjoule-sdk
+```
+
+```typescript
+import { SmartWalletClient } from "lumenjoule-sdk";
+
+const client = new SmartWalletClient({
+  agentSecretKey: process.env.AGENT_SECRET,  // S... key from portal
+  walletAddress: "CXXX...",                   // wallet C-address
+  network: "mainnet",
+});
+
+const response = await client.chat({
+  model: "deepseek-ai/DeepSeek-V3",
+  messages: [{ role: "user", content: "Hello!" }],
+});
+
+console.log(response.choices[0].message.content);
+```
+
+## Architecture
+
+### Three-Address Wallet Model
+
+- **C-address (Vault)**: Soroban smart account holding USDC. All transfers gated by `__check_auth` which validates signer key + spend policy.
+- **Ghost-G (Paymaster)**: Server-side account that pays gas via fee-bump wrapping. Never has access to user funds.
+- **PRF G-address (Deposits)**: Passkey-derived address for Coinbase OnRamp and exchange deposits.
+
+### Signer Types
+
+| Signer | Platform | Key Storage | Best For |
+|--------|----------|-------------|----------|
+| Ed25519 | All | Secret key string (S...) | Simplest setup |
+| SoftP256Signer | All | Encrypted file (~/.lumenjoule/) | Linux VPS, cloud |
+| KeypoSigner | macOS | Secure Enclave (hardware) | Maximum security |
+
+### Ed25519 (Any Platform)
+
+```typescript
+import { SmartWalletClient } from "lumenjoule-sdk";
+
+const client = new SmartWalletClient({
+  agentSecretKey: process.env.AGENT_SECRET,
+  walletAddress: "CXXX...",
+  network: "mainnet",
+});
+```
+
+### SoftP256Signer (Any Platform)
+
+```typescript
+import { SmartWalletClient, SoftP256Signer } from "lumenjoule-sdk";
+
+const signer = await SoftP256Signer.generate("my-password");
+// or: const signer = await SoftP256Signer.load("my-password");
+
+const client = new SmartWalletClient({
+  signer,
+  walletAddress: "CXXX...",
+  network: "mainnet",
+});
+```
+
+### KeypoSigner (macOS Secure Enclave)
+
+```typescript
+import { SmartWalletClient, KeypoSigner } from "lumenjoule-sdk";
+
+const signer = new KeypoSigner({
+  keyLabel: "my-agent-key",
+  publicKey: Buffer.from("BASE64_PUBLIC_KEY", "base64"),
+});
+
+const client = new SmartWalletClient({
+  signer,
+  walletAddress: "CXXX...",
+  network: "mainnet",
+});
+```
+
+## Spend Policies
+
+On-chain daily USDC spending limits enforced by ExternalValidatorPolicy contracts. Checked on every `transfer()` and `approve()`.
+
+| Tier | Daily Limit | Contract |
+|------|-------------|----------|
+| Starter | $50 | CBRGH27ZFVFDIHYKC4K3CSLKXHQSR5CFG2PLPZ2M37NH4PYBOBTTQAEC |
+| Production | $500 | CCRIFGLMG3PT7R3V2IFSRNDNKR2Y2DLJAI5KXYBKNJPFCL2QC4MDIZNJ |
+| Enterprise | $2,000 | CCSPAXNEVBNA5QAEU2YEUTU56O5KOZM4C2O7ONQ6GFPSHEWV5OJJS5H2 |
+
+```typescript
+const budget = await client.budgetStatus();
+// { dailyLimitUsdc: 50, spentTodayUsdc: 3.20, remainingUsdc: 46.80 }
+```
+
+## x402 Payment Protocol
+
+The SDK implements the x402 payment protocol for Stellar. Compatible with both the LumenBro facilitator and the OpenZeppelin Stellar facilitator.
+
+1. Agent sends request to x402-enabled API
+2. Server returns 402 Payment Required with price, asset, and destination
+3. SDK builds USDC transfer from smart wallet + signs auth with agent key
+4. SDK retries with PAYMENT-SIGNATURE header (v2) + X-Payment (v1 compat)
+5. Facilitator verifies signature, sponsors gas, submits on-chain (~5s finality)
+6. Server confirms settlement, returns the response
+
+### Pay Any x402 Endpoint
+
+```typescript
+// AI inference (OpenAI-compatible)
+const response = await client.chat({
+  model: "deepseek-ai/DeepSeek-V3",
+  messages: [{ role: "user", content: "Analyze this data" }],
+});
+
+// Any x402 endpoint
+const data = await client.payAndFetch("https://some-api.com/v1/data", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ query: "..." }),
+});
+
+// Direct USDC transfer (non-x402, agent pays gas)
+const txHash = await client.transfer(USDC_CONTRACT, recipientAddress, 1_000_000n);
+```
+
+## API Reference
+
+### SmartWalletClient Constructor Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| walletAddress | string | required | Smart wallet C-address |
+| agentSecretKey | string | — | Ed25519 secret key (S...) |
+| signer | AgentSigner | — | Pluggable signer (alternative to agentSecretKey) |
+| network | "testnet" \| "mainnet" | "mainnet" | Stellar network |
+| computeUrl | string | compute.lumenbro.com | Default x402 endpoint for chat() |
+| rpcUrl | string | auto | Custom Soroban RPC URL |
+| policyAddress | string | — | Spend policy contract (for budget queries) |
+| preferredAsset | string | USDC | Payment asset contract |
+
+### Methods
+
+| Method | Description |
+|--------|-------------|
+| chat(request) | OpenAI-compatible chat completion with automatic x402 payment |
+| payAndFetch(url, init?) | Pay any x402 endpoint and return the response |
+| transfer(token, to, amount) | Direct token transfer (Ed25519 only, agent pays gas) |
+| usdcBalance() | USDC balance of the wallet (7-decimal stroops) |
+| balance(token?) | Any token balance (defaults to LumenJoule) |
+| gasBalance() | XLM balance of the wallet |
+| budgetStatus() | Daily limit, spent today, remaining (requires policyAddress) |
+| dailyLimit() | Policy daily limit in stroops |
+| spentToday() | Amount spent today in stroops |
+| remaining() | Remaining daily budget in stroops |
+
+### x402 Protocol Helpers
+
+```typescript
+import { parsePaymentRequirements, performX402Dance } from "lumenjoule-sdk";
+
+const requirements = parsePaymentRequirements(response);
+// { scheme, payTo, amount, asset, network, maxTimeoutSeconds, ... }
+
+const paidResponse = await performX402Dance(url, init, buildPaymentFn);
+```
+
+## Compute Server API
+
+Base URL: https://compute.lumenbro.com
+
+| Endpoint | Description |
+|----------|-------------|
+| POST /v1/chat/completions | OpenAI-compatible chat completion. Returns 402 with payment requirements. |
+| GET /api/models | List available models and per-token pricing |
+
+## Self-Custody Model
+
+Agent signing keys live on the operator's device. The server never touches private keys — it only wraps transactions for gas sponsorship (fee-bump).
+
+| Provider | Key Model | Self-Custodial |
+|----------|-----------|----------------|
+| lumenjoule-sdk | Device-local (SE, passkey, encrypted file) | Yes |
+| Privy | MPC sharded (server holds share) | No |
+| Crossmint | API key custodial | No |
+| Turnkey | Infra-managed HSM | No |
+| Coinbase AgentKit | CDP API key | No |
+
+## Security
+
+- Smart account contracts forked from Crossmint/stellar-smart-account v1.0.0, which received a Halborn security review (Oct 2025)
+- Spend policy contracts: github.com/lumenbro/soroban-policies (StellarExpert verified builds)
+- Spend policy WASM hash: 19173258dc8d5cd819032df3f6fb031e57545d044848b9b288acafb39d051496
+
+## Mainnet Contracts
+
+| Component | Address |
+|-----------|---------|
+| USDC SAC | CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75 |
+| LumenJoule SAC | CBVWPBYEDJ7GYIUHL2HITMEEWM75WAMFINIQCR4ZAFZ62ISDFBVERQCX |
+| Starter Policy ($50/day) | CBRGH27ZFVFDIHYKC4K3CSLKXHQSR5CFG2PLPZ2M37NH4PYBOBTTQAEC |
+| Production Policy ($500/day) | CCRIFGLMG3PT7R3V2IFSRNDNKR2Y2DLJAI5KXYBKNJPFCL2QC4MDIZNJ |
+| Enterprise Policy ($2,000/day) | CCSPAXNEVBNA5QAEU2YEUTU56O5KOZM4C2O7ONQ6GFPSHEWV5OJJS5H2 |
+| XLM SAC | CAS3J7GYLGXMF6TDJBBYYSE3HQ6BBSMLNUQ34T6TZMYMW2EVH34XOWMA |
+
+## FAQ
+
+**Does my agent key need XLM?**
+No. For x402 payments, the facilitator pays gas. Your agent key only signs auth entries. Only direct transfer() calls require XLM.
+
+**What happens if my agent key is compromised?**
+Damage is capped by the on-chain spend policy. Starter tier = max $50/day. Revoke the signer from the dashboard at any time.
+
+**Can I use this with my own inference server?**
+Yes. Set computeUrl to your server, or use payAndFetch() for any x402-compatible endpoint.
+
+**Which signer should I use on a Linux VPS?**
+SoftP256Signer with an encrypted key file, or Ed25519 for simplicity. The spend policy is your primary security layer.
+
+**Can multiple agents share one wallet?**
+Yes. One wallet holds pooled USDC. Each agent signer has its own key and independent daily limit. Like corporate cards — one funding account, multiple cards.

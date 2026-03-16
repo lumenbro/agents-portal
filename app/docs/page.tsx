@@ -30,7 +30,7 @@ export default function DocsPage() {
           Give your AI agent a self-custodial wallet with on-chain spend limits. The SDK handles x402 payments automatically.
         </p>
         <p className="text-xs text-gray-600 mb-10">
-          Machine-readable version: <a href="/docs/llms.txt" className="text-blue-400 hover:underline">/docs/llms.txt</a>
+          Machine-readable version: <a href="/llms.txt" className="text-blue-400 hover:underline">/llms.txt</a>
         </p>
 
         {/* Table of contents */}
@@ -619,7 +619,7 @@ const paidResponse = await performX402Dance(url, init, buildPaymentFn);`}</code>
         <div className="max-w-4xl mx-auto text-center text-xs text-gray-600">
           <p>LumenBro Agents &mdash; Self-custodial AI agent wallets on Stellar</p>
           <p className="mt-1">
-            <a href="/docs/llms.txt" className="text-gray-500 hover:text-gray-400">llms.txt</a>
+            <a href="/llms.txt" className="text-gray-500 hover:text-gray-400">llms.txt</a>
             {" "}&middot;{" "}
             <a href="https://github.com/lumenbro/lumenjoule-sdk" target="_blank" rel="noopener" className="text-gray-500 hover:text-gray-400">GitHub</a>
             {" "}&middot;{" "}
